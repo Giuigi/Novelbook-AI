@@ -178,7 +178,6 @@ class _NovelbookAIState extends State<NovelbookAI> {
 
   // ─────────────────────── TEXT GENERATION (Free & Unlimited) ───────────────────────
   Future<void> _sendMessage() async {
-    print('Key: $HF_API_KEY');
     if (_controller.text.trim().isEmpty || _isLoading) return;
 
     final userText = _controller.text.trim();
@@ -190,8 +189,8 @@ class _NovelbookAIState extends State<NovelbookAI> {
 
     // Choose model based on your toggle (add the toggle in settings later if you want)
     final String model = _textStyle == 'dnd'
-        ? 'PocketDoc/Dans-AdventurousWinds-7b'           // D&D style, short, choices
-        : 'Sao10K/Fimbulvetr-11B-v2';                    // Immersive novel style
+        ? 'mistralai/Mistral-7B-Instruct-v0.3'
+        : 'mistralai/Mistral-7B-Instruct-v0.3';
 
     final String genrePrompt = _textStyle == 'dnd'
         ? "You are a D&D dungeon master. Keep replies short and punchy. Always end with numbered choices (1. 2. 3.)."
@@ -204,7 +203,7 @@ class _NovelbookAIState extends State<NovelbookAI> {
 
     try {
       final response = await http.post(
-        Uri.parse("https://api-inference.huggingface.co/models/$model"),
+        Uri.parse("https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.3"),
         headers: {
           "Authorization": "Bearer " + HF_API_KEY,
           "Content-Type": "application/json",
@@ -295,7 +294,7 @@ class _NovelbookAIState extends State<NovelbookAI> {
 
     try {
       final response = await http.post(
-        Uri.parse("https://api-inference.huggingface.co/models/$model"),
+        Uri.parse("https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.3"),
         headers: {"Authorization": "Bearer " + HF_API_KEY},
         body: jsonEncode({"inputs": prompt}),
       ).timeout(const Duration(seconds: 50));
