@@ -178,6 +178,7 @@ class _NovelbookAIState extends State<NovelbookAI> {
 
   // ─────────────────────── TEXT GENERATION (Free & Unlimited) ───────────────────────
   Future<void> _sendMessage() async {
+    print('Key: $HF_API_KEY');
     if (_controller.text.trim().isEmpty || _isLoading) return;
 
     final userText = _controller.text.trim();
