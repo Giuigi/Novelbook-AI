@@ -203,7 +203,7 @@ class _NovelbookAIState extends State<NovelbookAI> {
 
     try {
       final response = await http.post(
-          Uri.parse("https://corsproxy.io/?https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.3"),
+          Uri.parse("https://cors.bridged.cc/https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.3"),
         headers: {
           "Authorization": "Bearer " + HF_API_KEY,
           "Content-Type": "application/json",
@@ -294,7 +294,7 @@ class _NovelbookAIState extends State<NovelbookAI> {
 
     try {
       final response = await http.post(
-        Uri.parse("https://corsproxy.io/?https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0"),
+        Uri.parse("https://cors.bridged.cc/https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0"),
         headers: {"Authorization": "Bearer " + HF_API_KEY},
         body: jsonEncode({"inputs": prompt}),
       ).timeout(const Duration(seconds: 50));
