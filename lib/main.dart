@@ -187,57 +187,50 @@ class _NovelbookAIState extends State<NovelbookAI> {
     });
     _controller.clear();
 
-    // Choose model based on your toggle (add the toggle in settings later if you want)
-    final String model = _textStyle == 'dnd'
-        ? 'mistralai/Mistral-7B-Instruct-v0.3'
-        : 'mistralai/Mistral-7B-Instruct-v0.3';
-
     final String genrePrompt = _textStyle == 'dnd'
-        ? "You are a D&D dungeon master. Keep replies short and punchy. Always end with numbered choices (1. 2. 3.)."
-        : "You are a masterful fantasy novelist. Write vivid, flowing prose under 150 words. End with a hook.";
+        ? "You are an expert D&D dungeon master. Keep replies very short (2–4 sentences). Always end with 3 numbered choices.\nExample: You see a dragon. 1. Fight 2. Run 3. Talk"
+        : "You are a masterful dark-fantasy novelist. Write rich, immersive prose. Max 140 words per reply. End with a hook or cliffhanger.";
 
-    final String view = _firstPerson ? "first-person POV" : "third-person";
-    final String nsfw = _allowNsfw ? "mature themes allowed" : "keep it safe, no nudity";
+    final String viewPrompt = _firstPerson ? "Write in first-person (I see, I feel)." : "Write in third-person limited.";
+    final String nsfwPrompt = _allowNsfw ? "Mature/sensual themes allowed when appropriate." : "Keep everything SFW – no sexual content.";
 
-    final String systemPrompt = "$genrePrompt View: $view. NSFW: $nsfw.";
+    final String systemPrompt = "$genrePrompt $viewPrompt $nsfwPrompt Never speak or act for the player.";
 
     try {
       final response = await http.post(
-        Uri.parse("https://router.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.3"),
+        Uri.parse("https://router.huggingface.co/hf/inference/v1/chat/completions"),
         headers: {
-          "Authorization": "Bearer " + HF_API_KEY,
+          "Authorization": "Bearer $HF_API_KEY",
           "Content-Type": "application/json",
         },
         body: jsonEncode({
-          "inputs": "$systemPrompt\n\n" + _messages.map((m) => "${m.role}: ${m.content}").join("\n") + "\nuser: $userText\nassistant:",
-          "parameters": {
-            "max_new_tokens": 280,
-            "temperature": 0.9,
-            "return_full_text": false
-          }
+          "model": "mistralai/Mistral-7B-Instruct-v0.3",
+          "messages": [
+            {"role": "system", "content": systemPrompt},
+            ..._messages.map((m) => {"role": m.role == 'user' ? "user" : "assistant", "content": m.content}),
+            {"role": "user", "content": userText}
+          ],
+          "max_tokens": 300,
+          "temperature": 0.85,
+          "stream": false
         }),
-      ).timeout(const Duration(seconds: 28));
+      ).timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        String aiText = "";
-        if (data is List && data.isNotEmpty == false) {
-          aiText = data[0]['generated_text'] ?? "";
-        } else if (data['error'] != null) {
-          aiText = "The AI is busy… try again in a moment.";
-        } else {
-          aiText = data.toString();
-        }
+        final aiText = data['choices'][0]['message']['content'].toString().trim();
+
         setState(() {
-          _messages.add(Message(id: const Uuid().v4(), role: 'assistant', content: aiText.trim()));
+          _messages.add(Message(id: const Uuid().v4(), role: 'assistant', content: aiText));
         });
       } else {
-        _addError("The spirits are distracted… try again.");
+        final error = jsonDecode(response.body)['error'] ?? response.reasonPhrase;
+        _addError("AI error: $error");
       }
     } on TimeoutException {
-      _addError("Connection lost in the dungeon… check internet.");
+      _addError("No signal from the ether… check your internet.");
     } catch (e) {
-      _addError("Something went wrong… retry.");
+      _addError("The spirits are distracted… try again.");
     } finally {
       setState(() => _isLoading = false);
       _saveSettings();
@@ -286,49 +279,75 @@ class _NovelbookAIState extends State<NovelbookAI> {
   Future<void> _actuallyGenerateImage(String prompt) async {
     setState(() => _isLoading = true);
 
-    final String model = switch (_imageStyle) {
-      'anime' => 'andite/anything-v5.0',
-      'fantasy' => 'Lykon/DreamShaper',
-      _ => 'stabilityai/stable-diffusion-xl-base-1.0',
+    // Choose correct model based on style
+    final Map<String, String> modelMap = {
+      'anime': 'cagliostos/anything-v4.5-vae-swapped',
+      'fantasy': 'Lykon/dreamshaper-8',
+      'realistic': 'stabilityai/stable-diffusion-xl-base-1.0',
     };
+    final String model = modelMap[_imageStyle] ?? 'stabilityai/stable-diffusion-xl-base-1.0';
+
+    final String stylePrefix = switch (_imageStyle) {
+      'anime' => 'anime style, ultra detailed, sharp, vibrant colors,',
+      'fantasy' => 'fantasy oil painting, artstation, dramatic lighting, highly detailed,',
+      _ => 'photorealistic, ultra realistic, 8k, cinematic lighting,',
+    };
+
+    final String view = _firstPerson ? ', first-person POV' : '';
+    final String nsfw = _allowNsfw ? ', mature allowed' : ', safe for work, no nudity';
+
+    final fullPrompt = "$stylePrefix $prompt$view$nsfw, masterpiece, best quality";
 
     try {
       final response = await http.post(
-        Uri.parse("https://router.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0"),
-        headers: {"Authorization": "Bearer " + HF_API_KEY},
-        body: jsonEncode({"inputs": prompt}),
-      ).timeout(const Duration(seconds: 50));
+        Uri.parse("https://router.huggingface.co/hf/inference/models/$model"),
+        headers: {
+          "Authorization": "Bearer $HF_API_KEY",
+          "Content-Type": "application/json",
+        },
+        body: jsonEncode({
+          "inputs": fullPrompt,
+          "parameters": {"width": 768, "height": 1024}
+        }),
+      ).timeout(const Duration(seconds: 55));
 
       if (response.statusCode == 200) {
-        final bytes = response.bodyBytes;
-        String displayContent;
+        final List<dynamic> result = jsonDecode(response.body);
+        final String base64Image = result[0]; // HF returns base64 string directly
+        final bytes = base64Decode(base64Image);
 
+        String displayPath;
         if (kIsWeb) {
-          final base64 = base64Encode(bytes);
-          displayContent = 'data:image/png;base64,$base64';
+          final dataUrl = 'data:image/png;base64,$base64Image';
+          displayPath = dataUrl;
           if (_autoSaveToGallery) {
-            html.AnchorElement(href: displayContent)
-              ..setAttribute('download', 'scene_${DateTime.now().millisecondsSinceEpoch}.png')
+            html.AnchorElement(href: dataUrl)
+              ..setAttribute('download', 'novelbook_${DateTime.now().millisecondsSinceEpoch}.png')
               ..click();
           }
         } else {
           final dir = await getApplicationDocumentsDirectory();
-          final file = File('${dir.path}/scene_${DateTime.now().millisecondsSinceEpoch}.jpg');
+          final file = File('${dir.path}/img_${DateTime.now().millisecondsSinceEpoch}.jpg');
           await file.writeAsBytes(bytes);
-          displayContent = file.path;
+          displayPath = file.path;
+
           if (_autoSaveToGallery) {
             await ImageGallerySaverPlus.saveFile(file.path);
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Image saved to gallery!')),
+            );
           }
         }
 
         setState(() {
-          _messages.add(Message(id: const Uuid().v4(), role: 'image', content: displayContent));
+          _messages.add(Message(id: const Uuid().v4(), role: 'image', content: displayPath));
         });
       } else {
-        _addError("Image spell failed… try again.");
+        final err = jsonDecode(response.body);
+        _addError("Image failed: ${err['error'] ?? response.statusCode}");
       }
     } catch (e) {
-      _addError("Image generation error.");
+      _addError("Image error: $e");
     } finally {
       setState(() => _isLoading = false);
       _saveSettings();
